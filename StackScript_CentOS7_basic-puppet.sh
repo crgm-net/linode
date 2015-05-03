@@ -12,16 +12,36 @@
 # * Update + install useful packages, epel
 # * Firewalld for ssh only, running denyhosts
 # * install puppet and run simple site.pp on host (configures cron job to run every 35m)
+# * produces ~/.ssh/config and ~/.ssh/known_hosts for your client
 #
 # Reboots when complete
 #
 
 set -e
 set -o verbose
-echo "Running CentOS 7 Stackscript" | logger
+thedate=$(date)
+echo "Running CentOS 7 Stackscript - $thedate" | logger
+mkdir -v /root/setupfiles/
 
 exec > >(tee /root/stackscript.log)
 exec 2>&1
+
+######################################################################################################
+# detect environment.
+
+vmenc=$(dmesg | grep -i "Detected virtualization")
+
+# VirtualBox
+#echo "$vmenc" | grep -q "$oracle"
+#if [ $? -eq 0 ];then
+#  echo "[*] Virtualbox found"
+#
+#  # find script name, populate varibles from Linode StackScript UDF tags
+#  echo "runs from ${BASH_SOURCE[0]}"
+#  for NAME in `grep UDF ${BASH_SOURCE[0]}`; do
+#      echo "$NAME"
+#  done
+#fi
 
 ######################################################################################################
 # Firewall - nothing in
@@ -42,7 +62,7 @@ if [ ! -f /tmp/stackscript_yum ]; then
   yum -y update
   yum -y install epel-release
   yes | yum -y upgrade
-  yes | yum -y install sudo denyhosts which lsof man mlocate tmux screen byobu htop vim nano wget curl git rsync zip bind-utils openssl-devel perl tcpdump ccze whois net-tools
+  yes | yum -y install sudo denyhosts which lsof man mlocate tmux screen byobu htop vim lynx telnet nano wget curl git rsync zip bind-utils openssl-devel perl tcpdump ccze whois net-tools
 
   sleep 5s
 
@@ -133,26 +153,39 @@ if [ ! -f /tmp/stackscript_ssh ]; then
   echo "AllowUsers $USERA" >> /etc/ssh/sshd_config
   echo "DenyGroups root" >> /etc/ssh/sshd_config
 
-  # Gather SSHD info
-  mypubip=$(hostname -I)
+  # Gather SSHD info for easy login
+  mypubip=$(/sbin/ifconfig eth0 | grep 'inet' -m1 | cut -d: -f2 | awk '{ print $2}')
   myhostnm=$(hostname)
   myfqdn=$(hostname -f)
   deets="/root/sshd_fingerprints.txt"
   touch $deets
+  echo "Add to client ~/.ssh/config" >> $deets
+  echo -e "host\t$myhostnm" >> $deets
+  echo -e "\t\tHostName\t\t$mypubip" >> $deets
+  echo -e "\t\tUser\t\t$USERA" >> $deets
+  echo -e "\t\tport\t\t22" >> $deets
+  echo -e " " >> $deets
+
+  echo -e "Add to client ~/.ssh/known_hosts" >> $deets
+  echo -e "\n" >> $deets
+  ssh-keyscan -t rsa $mypubip >> $deets
+  ssh-keyscan -t ecdsa $mypubip >> $deets
+  echo -e "\n" >> $deets
+  echo -e "Linode ID:\t $LINODE_ID" >> $deets
+  echo -e "Lish Name:\t $LINODE_LISHUSERNAME" >> $deets
   echo -e "My IP:\t $mypubip" >> $deets
   echo -e "My Hostname:\t $myhostnm" >> $deets
   echo -e "My FQDN:\t $myfqdn" >> $deets
-  echo -e "Linode ID:\t $LINODE_ID" >> $deets
-  echo -e "Lish Name:\t $LINODE_LISHUSERNAME" >> $deets
-  echo " " >> $deets
+  echo -e " " >> $deets
+  echo "SSH Server fingerprints:" >> $deets
+  echo -e "\n" >> $deets
   ssh-keygen -l -f /etc/ssh/ssh_host_rsa_key >> $deets
   ssh-keygen -l -f /etc/ssh/ssh_host_ecdsa_key >> $deets
-  ssh-keygen -l -f /etc/ssh/ssh_host_ed25519_key >> $deets
 
   # create passwordless ssh key for root
   /usr/bin/ssh-keygen -q -N '' -t rsa -f ~/.ssh/id_rsa
 
-  /bin/systemctl restart sshd.service
+  /bin/systemctl restart sshd.service >> /root/stackscript.log
   echo "[*] SSH Conf completed"
 fi
 
@@ -203,8 +236,6 @@ if [ $yumfin -eq 0 ] && [ $setfin -eq 4 ]; then
   systemctl enable denyhosts.service
   systemctl enable firewalld
 
-  mkdir -v /root/setupfiles/
-
   # Run puppet site manifest if installing
   if [ "$INSTPUPPET" == "YES" ]; then
     puppet apply /etc/puppet/manifests/site.pp --logdest /var/log/puppet/agent_autorun.log --verbose
@@ -217,12 +248,13 @@ if [ $yumfin -eq 0 ] && [ $setfin -eq 4 ]; then
   firewall-cmd --permanent --add-service=ssh
 
   # clean up
-  mv -v /root/stackscript.log /root/setupfiles/
   mv -v /root/StackScript /root/setupfiles/
   rpm -qa > /root/setupfiles/base_packages.txt
   chmod -v 400 /root/setupfiles/*
   rm -rf /tmp/stackscript_*
 
+  thedate=$(date)
+  echo "[*] finished StackScript rebooting - $thedate" >> /root/stackscript.log
   logger "finished StackScript rebooting"
   systemctl reboot
 fi
