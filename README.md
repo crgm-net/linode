@@ -7,7 +7,7 @@ Provisioning and maintaining a Linode can be easy. Create a workflow to develop 
 
 The file StackScript_CentOS7_basic-puppet.sh is a Linode StackScript to configure a simple minimal CentOS 7 server for production hosting.
 
-Answer some questions in the Linode web manages, deploy a new node. Use LISH () to SSH in and watch the progrss, then get server details wich are found in:
+Answer some questions in the Linode web manager, deploy a new node. Use LISH to SSH in and watch the progrss, then login when the script has complete to get the server details wich are found in ~/sshd_fingerprints.txt and contain lines to copy to your clients ~/.ssh/config and ~/.ssh/known_hosts files for easy connecting.
 
 ### Vagrant
 
